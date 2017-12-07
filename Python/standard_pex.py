@@ -1,15 +1,14 @@
-from node import Node
+from node import StandardNode
 from edit_distance import EditDistance
 import math
-from numba import jit, autojit, cuda
 
-class ParallelPEXAlgorithm:
+class StandardPEXAlgorithm:
     def __init__(self):
         self.leaves = []
         self.indicesDict = {}
 
     def create_tree(self, subpattern, i, j, k, parent, plen):
-        node = Node()
+        node = StandardNode()
         node.start = i
         node.end = j
         left = math.ceil((k+1)/2.0)
@@ -20,11 +19,10 @@ class ParallelPEXAlgorithm:
             self.leaves.append(node)
         else:
             lk = math.floor((left * k) / (k + 1))
-            self.create_tree(subpattern[i:i+left*plen], i, i+left*plen-1, lk, node, plen)
+            self.create_tree(subpattern[:left*plen], i, i+left*plen-1, lk, node, plen)
             rk = math.floor(((k + 1 - left) * k) / (k + 1))
-            self.create_tree(subpattern[i + left*plen:j+1], i + left*plen, j, rk, node, plen)
+            self.create_tree(subpattern[left*plen:], i + left*plen, j, rk, node, plen)
 
-    @cuda.jit
     def find_indices(self, input_string):
         for leaf in self.leaves:
             string = input_string
