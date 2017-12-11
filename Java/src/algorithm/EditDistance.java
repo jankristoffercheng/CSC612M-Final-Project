@@ -1,6 +1,7 @@
 package algorithm;
 
 public class EditDistance {
+	
 	public int compute(String word1, String word2) {
 		int len1 = word1.length();
 		int len2 = word2.length();

@@ -1,19 +1,21 @@
 package algorithm;
 
-import java.util.ArrayList;
-
 import model.Node;
 
 public class StandardPEXAlgorithm extends PEXAlgorithm{
 	
 	public void findIndices(String inputString) {
+		int sLen = inputString.length();
 		for(Node leaf : leaves) {
-			String string = inputString;
-			int index = string.indexOf(leaf.getPattern());
-			while(index != -1) {
-				leaf.addIndex(index);
-				string = string.substring(0, index) + "$" + string.substring(index+1);
-				index = string.indexOf(leaf.getPattern());
+			String pattern = leaf.getPattern();
+			int pLen = pattern.length();
+			for(int i = 0;i <= sLen - pLen; i++) {
+				int j=0;
+				while(j<pLen && (inputString.charAt(i+j)==pattern.charAt(j))) {
+	               j=j+1;
+	               if(j==pLen)
+	                   leaf.addIndex(i);
+				}
 			}
 		}
 	}
@@ -25,7 +27,7 @@ public class StandardPEXAlgorithm extends PEXAlgorithm{
 				int i = leaf.getFrom();
                 Node parent = leaf.getParent();
                 boolean cand = true;
-                int p1 = -1;
+                int p1 = index - i;
                 while(cand && parent != null) {
                     p1 = index - (i - parent.getFrom());
                     int p2 = index + (parent.getTo() - i) + 1;
@@ -40,6 +42,8 @@ public class StandardPEXAlgorithm extends PEXAlgorithm{
                         p1 -= parent.getError();
                         int counter = parent.getError();
                         boolean withp1 = false;
+                        if(p1 < 0)
+                            p1 = 0;
                         while(counter != 0 && !withp1) {
                             distance = ed.compute(inputString.substring(p1,p2), parent.getPattern());
                             if(distance <= parent.getError()) {
@@ -51,9 +55,12 @@ public class StandardPEXAlgorithm extends PEXAlgorithm{
                             }
                         }
                         if(!withp1) {
+                        	p1 = index - (i - parent.getFrom());
                             p2 += parent.getError();
                             counter = parent.getError();
                             boolean withp2 = false;
+                            if(p2 > inputString.length())
+                                p2 = inputString.length();
                             while(counter != 0 && !withp2) {
                                 distance = ed.compute(inputString.substring(p1,p2), parent.getPattern());
                                 if(distance <= parent.getError()) {

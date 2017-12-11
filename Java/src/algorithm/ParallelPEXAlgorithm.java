@@ -2,15 +2,22 @@ package algorithm;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import model.Node;
 
 public class ParallelPEXAlgorithm extends PEXAlgorithm{
 	
 	private int nThreads;
+	private ExecutorService executor;
 	
 	public ParallelPEXAlgorithm(int nThreads) {
 		indices = Collections.synchronizedList(new ArrayList<Integer>());
@@ -18,29 +25,81 @@ public class ParallelPEXAlgorithm extends PEXAlgorithm{
 	}
 	
 	public void findIndices(String inputString) {
-		ExecutorService executor = Executors.newFixedThreadPool(nThreads);
+
+//		int sLen = inputString.length();
+//		for(Node leaf : leaves) {
+//			String pattern = leaf.getPattern();
+//			int pLen = pattern.length();
+//			for(int i = 0;i <= sLen - pLen; i++) {
+//				int j=0;
+//				while(j<pLen && (inputString.charAt(i+j)==pattern.charAt(j))) {
+//	               j=j+1;
+//	               if(j==pLen)
+//	                   leaf.addIndex(i);
+//				}
+//			}
+//		}
+		executor = Executors.newFixedThreadPool(nThreads);
 		for(Node leaf : leaves) {
 			Runnable worker = new FindIndicesThread(inputString, leaf);  
             executor.execute(worker);
 		}
-		executor.shutdown();  
-        while (!executor.isTerminated()) {   } 
+		try {
+			executor.shutdown();
+			executor.awaitTermination(Long.MAX_VALUE, TimeUnit.SECONDS);
+		} catch (InterruptedException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
 	}
 	
 	public void searchCandidates(String inputString) {
-		ExecutorService executor = Executors.newFixedThreadPool(nThreads);
+		executor = Executors.newFixedThreadPool(nThreads);
+		List<Set<Callable<Object>>> allCallables = new ArrayList<Set<Callable<Object>>>();
 		for(Node leaf : leaves) {
-			for(int index : leaf.getIndices()) {
-				Runnable worker = new FindStringThread(inputString, leaf, index, indices);  
-	            executor.execute(worker);
-			}		
+			Callable worker = new SearchLeafThread(inputString, leaf, indices);
+            Future<Set<Callable<Object>>> future = executor.submit(worker);
+            try {
+            	Set<Callable<Object>> callables = future.get();
+            	executor.invokeAll(callables);
+			} catch (InterruptedException | ExecutionException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
 		}
-		executor.shutdown();  
-        while (!executor.isTerminated()) {   } 
+		try {
+			executor.shutdown();
+			executor.awaitTermination(Long.MAX_VALUE, TimeUnit.SECONDS);
+		} catch (InterruptedException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
 	}
 }
 
-class FindStringThread implements Runnable {
+class SearchLeafThread implements Callable {
+
+	private String inputString;
+	public Node leaf;
+	private List<Integer> indices;
+	
+	public SearchLeafThread(String inputString, Node leaf, List<Integer> indices){  
+        this.inputString = inputString;
+    	this.leaf = leaf;
+        this.indices = indices;
+    }
+	
+	public Set<Callable<Object>> call() {
+		Set<Callable<Object>> workers = new HashSet<Callable<Object>>();
+		for(int index : leaf.getIndices()) {
+			Callable worker = new FindStringThread(inputString, leaf, index, indices);  
+            workers.add(worker);
+		}
+		return workers;
+	}
+}
+
+class FindStringThread implements Callable {
 	
 	private String inputString;
 	private Node leaf;
@@ -54,12 +113,12 @@ class FindStringThread implements Runnable {
         this.indices = indices;
     }  
     
-    public void run() {  
+    public Object call() {
     	EditDistance ed = new EditDistance();
     	int i = leaf.getFrom();
         Node parent = leaf.getParent();
         boolean cand = true;
-        int p1 = -1;
+        int p1 = index - i;
         while(cand && parent != null) {
             p1 = index - (i - parent.getFrom());
             int p2 = index + (parent.getTo() - i) + 1;
@@ -71,7 +130,9 @@ class FindStringThread implements Runnable {
             if(distance <= parent.getError())
                 parent = parent.getParent();
             else {
-                p1 -= parent.getError();
+            	p1 -= 1;
+            	if(p1 < 0)
+                    p1 = 0;
                 int counter = parent.getError();
                 boolean withp1 = false;
                 while(counter != 0 && !withp1) {
@@ -81,11 +142,16 @@ class FindStringThread implements Runnable {
                         withp1 = true;
                     } else {
                         counter -= 1;
-                        p1 += 1;
+                        p1 -= 1;
+                        if(p1 < 0)
+                            p1 = 0;
                     }
                 }
                 if(!withp1) {
-                    p2 += parent.getError();
+                	p1 = index - (i - parent.getFrom());
+                	p2 += 1;
+                    if(p2 > inputString.length())
+                        p2 = inputString.length();
                     counter = parent.getError();
                     boolean withp2 = false;
                     while(counter != 0 && !withp2) {
@@ -95,7 +161,9 @@ class FindStringThread implements Runnable {
                             withp2 = true;
                         } else {
                             counter -= 1;
-                            p2 -= 1;
+                            p2 += 1;
+                            if(p2 > inputString.length())
+                                p2 = inputString.length();
                         }
                     }
                     if(!withp2)
@@ -103,12 +171,14 @@ class FindStringThread implements Runnable {
                 }
             }
 		}
-        if(cand && !indices.contains(p1))
-        	synchronized (indices) {
-        		indices.add(p1);
-			}
+    	synchronized (indices) {
+	        if(cand && !indices.contains(p1)){
+	        		indices.add(p1);
+	        }
+		}
+    	return null;
     }
-} 
+}
 
 class FindIndicesThread implements Runnable {
 
@@ -121,12 +191,16 @@ class FindIndicesThread implements Runnable {
 	}
 	
 	public void run() {
-		String string = inputString;
-		int index = string.indexOf(leaf.getPattern());
-		while(index != -1) {
-			leaf.addIndex(index);
-			string = string.substring(0, index) + "$" + string.substring(index+1);
-			index = string.indexOf(leaf.getPattern());
+		int sLen = inputString.length();
+		String pattern = leaf.getPattern();
+		int pLen = pattern.length();
+		for(int i = 0;i <= sLen - pLen; i++) {
+			int j=0;
+			while(j<pLen && (inputString.charAt(i+j)==pattern.charAt(j))) {
+               j=j+1;
+               if(j==pLen)
+                   leaf.addIndex(i);
+			}
 		}
 	}
 	
